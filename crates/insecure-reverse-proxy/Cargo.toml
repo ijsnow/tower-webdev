@@ -2,7 +2,8 @@
 name = "insecure-reverse-proxy"
 version = "0.1.0"
 edition = "2021"
-license-file = "LICENCE.hyper-reverse-proxy"
+description = "A simple reverse proxy service for tower based off hyper-reverse-proxy."
+license-file = "./LICENSE.hyper-reverse-proxy"
 
 [dependencies]
 futures-util.workspace = true
