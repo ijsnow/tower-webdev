@@ -7,7 +7,7 @@ http = "1.2"
 http-body = "1.0"
 http-body-util = "0.1.2"
 hyper = "1.6"
-insecure-reverse-proxy = { path = "./crates/insecure-reverse-proxy" }
+insecure-reverse-proxy = { version = "0.1.0", path = "./crates/insecure-reverse-proxy" }
 tokio = { version = "1.43" }
 tower = "0.5.2"
 tracing = "0.1.41"
