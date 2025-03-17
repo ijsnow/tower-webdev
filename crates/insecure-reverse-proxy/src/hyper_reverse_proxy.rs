@@ -40,12 +40,17 @@ static HOP_HEADERS: LazyLock<[HeaderName; 9]> = LazyLock::new(|| {
 static X_FORWARDED_FOR: LazyLock<HeaderName> =
     LazyLock::new(|| HeaderName::from_static("x-forwarded-for"));
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProxyError {
+    #[error("InvalidUri: {0}")]
     InvalidUri(InvalidUri),
+    #[error("HyperError: {0}")]
     HyperError(HyperError),
+    #[error("HyperClientError: {0}")]
     HyperClientError(HyperClientError),
+    #[error("ForwardHeaderError")]
     ForwardHeaderError,
+    #[error("UpgradeError: {0}")]
     UpgradeError(String),
 }
 
@@ -404,40 +409,3 @@ where
         Ok(proxied_response)
     }
 }
-
-// #[derive(Clone)]
-// pub struct ProxiedBody {
-//     inner: UnsyncBoxBody<Bytes, std::convert::Infallible>,
-// }
-//
-// impl HttpBody for ProxiedBody {
-//     type Data = Bytes;
-//
-//     /// The error type this `Body` might generate.
-//     type Error = std::convert::Infallible;
-//
-//     fn poll_frame(
-//         self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-//         self.inner.poll_frame()
-//     }
-//
-//     /// Returns `true` when the end of stream has been reached.
-//     ///
-//     /// An end of stream means that `poll_frame` will return `None`.
-//     ///
-//     /// A return value of `false` **does not** guarantee that a value will be
-//     /// returned from `poll_frame`.
-//     fn is_end_stream(&self) -> bool {
-//         false
-//     }
-//
-//     /// Returns the bounds on the remaining length of the stream.
-//     ///
-//     /// When the **exact** remaining length of the stream is known, the upper bound will be set and
-//     /// will equal the lower bound.
-//     fn size_hint(&self) -> SizeHint {
-//         SizeHint::default()
-//     }
-// }

@@ -6,8 +6,9 @@ use std::{
 };
 
 use futures_util::future::BoxFuture;
-use http::{Request, Response};
+use http::{Request, Response, StatusCode};
 use http_body::Body as HttpBody;
+use http_body_util::Either;
 use hyper::body::Incoming;
 use hyper_reverse_proxy::HyperReverseProxy;
 use hyper_util::{
@@ -18,6 +19,8 @@ use hyper_util::{
     rt::TokioExecutor,
 };
 use tower::Service;
+
+use hyper_reverse_proxy::ProxyError;
 
 pub struct InsecureReverseProxyService<C, Body> {
     pub target: String,
@@ -65,6 +68,8 @@ impl<C: Clone, B> Clone for InsecureReverseProxyService<C, B> {
     }
 }
 
+pub type InsecureReverseProxyServiceBody = Either<Incoming, String>;
+
 impl<C, Body> Service<Request<Body>> for InsecureReverseProxyService<C, Body>
 where
     C: Connect + Clone + Send + Sync + 'static,
@@ -72,8 +77,7 @@ where
     Body::Data: Send,
     Body::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    // type Response = Response<UnsyncBoxBody<Bytes, HyperError>>;
-    type Response = Response<Incoming>;
+    type Response = Response<InsecureReverseProxyServiceBody>;
     type Error = std::convert::Infallible;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -88,9 +92,25 @@ where
         Box::pin(async move {
             let res = proxy
                 .call("127.0.0.1".parse().unwrap(), target.clone(), request)
-                .await
-                .unwrap();
-            // .map(|body| body.boxed_unsync());
+                .await;
+
+            let res = match res {
+                Ok(res) => res.map(Either::Left),
+                Err(err) => match err {
+                    ProxyError::HyperClientError(error) if error.is_connect() => {
+                        Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Either::Right(
+                                "Bad gateway. Is your dev server running?".to_owned(),
+                            ))
+                            .unwrap()
+                    }
+                    error => Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Either::Right(error.to_string()))
+                        .unwrap(),
+                },
+            };
 
             Ok(res)
         })

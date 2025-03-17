@@ -16,6 +16,7 @@ hyper-util = { version = "0.1.1", features = [
   "http1",
   "tokio",
 ] }
+thiserror = "2.0"
 tokio = { workspace = true, features = ["io-util"] }
 tower.workspace = true
 tracing.workspace = true

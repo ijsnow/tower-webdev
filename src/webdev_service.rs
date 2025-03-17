@@ -4,12 +4,15 @@ use std::{
     task::{Context, Poll},
 };
 
+use bytes::Bytes;
 use futures_util::future::BoxFuture;
 use http::{Request, Response};
 use http_body::Body as HttpBody;
-use http_body_util::Either;
+use http_body_util::{combinators::BoxBody, Either};
 use hyper::body::Incoming;
-use insecure_reverse_proxy::{HttpReverseProxyService, InsecureReverseProxyService};
+use insecure_reverse_proxy::{
+    HttpReverseProxyService, InsecureReverseProxyService, InsecureReverseProxyServiceBody,
+};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -72,7 +75,6 @@ impl Config {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
 pub enum Mode {
     Production,
     Development,
@@ -105,9 +107,7 @@ impl<B> Clone for WebdevService<B> {
 }
 
 impl<B> WebdevService<B> {
-    pub async fn new(
-        config: Config,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>>
+    pub async fn new(config: Config) -> Result<Self, std::io::Error>
     where
         B: HttpBody + Send + Unpin + 'static,
         B::Data: Send,
@@ -120,14 +120,14 @@ impl<B> WebdevService<B> {
             config,
         };
 
-        this.execute_install().await?;
-
         match &this.config.mode {
             Mode::Development => {
-                this.execute_dev().await?;
+                this.config.execute_install().await?;
+                this.config.execute_dev().await?;
             }
             Mode::Production => {
-                this.execute_dev().await?;
+                // this.config.execute_install().await?;
+                // this.config.execute_build().await?;
             }
         }
 
@@ -135,7 +135,7 @@ impl<B> WebdevService<B> {
     }
 }
 
-pub type WebdevResponse = Either<ServeFileSystemResponseBody, Incoming>;
+pub type WebdevResponse = Either<ServeFileSystemResponseBody, InsecureReverseProxyServiceBody>;
 
 impl<Body> Service<Request<Body>> for WebdevService<Body>
 where
@@ -173,7 +173,13 @@ where
                 let mut proxy = proxy.clone();
 
                 Box::pin(async move {
-                    let res = proxy.call(request).await.unwrap();
+                    let res = proxy
+                        .call(request)
+                        .await
+                        .inspect_err(|err| {
+                            tracing::error!("gaaaaah: {}", err);
+                        })
+                        .unwrap();
 
                     Ok(res.map(Either::Right))
                 })
@@ -216,12 +222,10 @@ impl<Body> InnerService<Body> {
 }
 
 #[allow(unused)]
-impl<B> WebdevService<B> {
-    async fn execute_install(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let mut command = Command::new(&self.config.command);
-        command.current_dir(&self.config.root.canonicalize()?);
+impl Config {
+    async fn execute_install(&self) -> Result<(), std::io::Error> {
+        let mut command = Command::new(&self.command);
+        command.current_dir(&self.root.canonicalize()?);
 
         command.args(["install"]);
         command.stdout(Stdio::piped());
@@ -251,11 +255,9 @@ impl<B> WebdevService<B> {
         Ok(())
     }
 
-    async fn execute_build(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let mut command = Command::new(&self.config.command);
-        command.current_dir(&self.config.root.canonicalize()?);
+    async fn execute_build(&self) -> Result<(), std::io::Error> {
+        let mut command = Command::new(&self.command);
+        command.current_dir(&self.root.canonicalize()?);
 
         command.args(["build"]);
         command.stdout(Stdio::piped());
@@ -285,9 +287,9 @@ impl<B> WebdevService<B> {
         Ok(())
     }
 
-    async fn execute_dev(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let mut command = Command::new(&self.config.command);
-        command.current_dir(&self.config.root.canonicalize()?);
+    async fn execute_dev(&self) -> Result<(), std::io::Error> {
+        let mut command = Command::new(&self.command);
+        command.current_dir(&self.root.canonicalize()?);
         command.args(["dev"]);
         command.stdout(Stdio::piped());
 
@@ -316,6 +318,24 @@ impl<B> WebdevService<B> {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "build")]
+impl Config {
+    pub fn prebuild(&self) -> Result<(), std::io::Error> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_io()
+            .build()?;
+
+        let this = self.clone();
+
+        rt.block_on(async move {
+            this.execute_install().await?;
+            this.execute_build().await?;
+
+            Ok(())
+        })
     }
 }
 
