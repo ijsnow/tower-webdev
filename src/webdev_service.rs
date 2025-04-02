@@ -4,12 +4,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::Bytes;
 use futures_util::future::BoxFuture;
 use http::{Request, Response};
 use http_body::Body as HttpBody;
-use http_body_util::{combinators::BoxBody, Either};
-use hyper::body::Incoming;
+use http_body_util::Either;
 use insecure_reverse_proxy::{
     HttpReverseProxyService, InsecureReverseProxyService, InsecureReverseProxyServiceBody,
 };
